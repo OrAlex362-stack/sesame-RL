@@ -17,20 +17,18 @@ Gymnasium 是 OpenAI 開發的 Gym 庫的維護分支，它提供了豐富的強
 Stable Baselines3 是一套在 PyTorch 中可靠實現的強化學習算法。
 <https://stable-baselines3.readthedocs.io/en/master/guide/install.html>
 
-
 **Test**
 actuator test
 verisoncheck
 view_sesame
 
-
 **Git Hub**
 *UPLOAD*
-[ 工作區 (Working Directory) ] 
+[ 工作區 (Working Directory) ]
        │
        │  1. git add .  (把修改或新檔案放到「暫存區」)
        ▼
-[ 暫存區 (Staging Area) ] 
+[ 暫存區 (Staging Area) ]
        │
        │  2. git commit -m "訊息"  (把暫存區的內容「打包成版本」)
        ▼
@@ -55,4 +53,8 @@ git pull
 
 ### 003 — Reinforcement Learning
 
-將 MuJoCo 模型封裝成 Gymnasium RL environment，使用 PPO 學習 8 維連續關節控制。此階段比較 Random、Firmware 與 learned policy，並透過 reward ablation 改善 forward locomotion、lateral motion 與 heading/yaw stability。
+將 MuJoCo 模型封裝成 Gymnasium RL environment，使用 PPO & SAC 學習 8 維連續關節控制。此階段比較 Random、Firmware 與 learned policy，並透過 reward ablation 改善 forward locomotion、lateral motion 與 heading/yaw stability。
+
+V3 採用 SAC，在與 V2 PPO 相同的 MuJoCo environment、observation/action space 與 Reward V2 設定下進行比較。評估結果顯示，V3 在保留或提升 forward locomotion 的同時，降低 lateral motion 與 yaw rate，並改善 directional ratio 與 path efficiency。這表示 SAC policy 在目前 Sesame locomotion task 中，不只提高推進能力，也改善了運動方向性與 heading/yaw stability。
+
+因此，V2 → V3 的改善不能只由 episode reward 判斷，而應由 forward velocity、lateral velocity、yaw rate、directional ratio、path efficiency 與 stability metrics 共同驗證。
