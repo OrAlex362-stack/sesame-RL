@@ -4,9 +4,17 @@
 04_compare_models.py
 ====================
 
-Generic PPO policy comparison tool.
+Generic PPO / SAC / TD3 policy comparison tool.
 
-Only change MODEL_A / MODEL_B and LABEL_A / LABEL_B.
+Current:
+- V2 PPO
+- V3 SAC
+
+Future:
+- V4 TD3
+
+IMPORTANT:
+The original evaluation protocol is preserved.
 
 Outputs:
 - 04_trajectory.png
@@ -16,7 +24,6 @@ Outputs:
 - 04_metrics.png
 - 04_summary.csv
 
-Important:
 Raw reward is NOT compared because different reward functions
 may use different scales.
 """
@@ -27,7 +34,7 @@ import csv
 import numpy as np
 import matplotlib.pyplot as plt
 
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, SAC, TD3
 
 from sesame_rl_env import (
     SesameRLEnv,
@@ -37,24 +44,66 @@ from sesame_rl_env import (
 
 
 # ============================================================
-# 1. ONLY CHANGE THESE
+# 1. MODELS
+#
+# 現在 V2 + V3 可以直接跑。
+# 未來 V4 完成後，只要取消 V4 區塊註解。
 # ============================================================
 
-MODEL_A = (
-    "/home/kit/sesame-RL/"
-    "003_rl_results/01_ppo_baseline_001/"
-    "best_model/best_model.zip"
-)
+MODELS = [
 
-MODEL_B = (
-    "/home/kit/sesame-RL/"
-    "003_rl_results/02_reward_v2_yaw/"
-    "best_model/best_model.zip"
-)
+    # --------------------------------------------------------
+    # V2 — PPO
+    # --------------------------------------------------------
 
-LABEL_A = "Reward V1"
+    {
+        "label": "V2 PPO",
 
-LABEL_B = "Reward V2"
+        "algorithm": "PPO",
+
+        "path": (
+            "/home/kit/sesame-RL/"
+            "003_rl_results/02_reward_v2_yaw/"
+            "best_model/best_model.zip"
+        ),
+    },
+
+
+    # --------------------------------------------------------
+    # V3 — SAC
+    # --------------------------------------------------------
+
+    {
+        "label": "V3 SAC",
+
+        "algorithm": "SAC",
+
+        "path": (
+            "/home/kit/sesame-RL/"
+            "003_rl_results/05_sac_v3/"
+            "best_model/best_model.zip"
+        ),
+    },
+
+
+    # --------------------------------------------------------
+    # V4 — TD3
+    #
+    # V4 跑完後取消這段註解即可。
+    # --------------------------------------------------------
+
+    {
+        "label": "V4 TD3",
+    
+        "algorithm": "TD3",
+    
+        "path": (
+            "/home/kit/sesame-RL/"
+            "003_rl_results/06_td3_v4/"
+            "best_model/best_model.zip"
+        ),
+    },
+]
 
 
 # ============================================================
@@ -63,10 +112,12 @@ LABEL_B = "Reward V2"
 
 SEED = 2000
 
+
 OUTPUT_DIR = Path(
     "/home/kit/sesame-RL/"
     "003_rl_results/model_comparison"
 )
+
 
 OUTPUT_DIR.mkdir(
     parents=True,
@@ -76,22 +127,30 @@ OUTPUT_DIR.mkdir(
 
 # ============================================================
 # 3. MODEL PATH HELPER
+#
+# Same behaviour as first version:
+# accept path with or without ".zip".
 # ============================================================
 
 def resolve_model_path(path):
 
     path = Path(path)
 
+
     if path.exists():
+
         return path
 
-    # Allow path without .zip
+
     zip_path = Path(
         str(path) + ".zip"
     )
 
+
     if zip_path.exists():
+
         return zip_path
+
 
     raise FileNotFoundError(
         f"Model not found:\n{path}"
@@ -99,54 +158,140 @@ def resolve_model_path(path):
 
 
 # ============================================================
-# 4. ROLLOUT
+# 4. ALGORITHM LOADER
+#
+# This is the main extension from the original version.
+# ============================================================
+
+LOADERS = {
+
+    "PPO": PPO,
+
+    "SAC": SAC,
+
+    "TD3": TD3,
+}
+
+
+def load_model(
+    algorithm,
+    model_path,
+):
+
+    algorithm = algorithm.upper()
+
+
+    if algorithm not in LOADERS:
+
+        raise ValueError(
+            f"Unsupported algorithm: {algorithm}\n"
+            f"Supported: {list(LOADERS.keys())}"
+        )
+
+
+    ModelClass = LOADERS[
+        algorithm
+    ]
+
+
+    # Keep original load behaviour.
+    return ModelClass.load(
+        str(model_path)
+    )
+
+
+# ============================================================
+# 5. ROLLOUT
+#
+# Evaluation protocol below is kept from the first version.
 # ============================================================
 
 def rollout(
     model_path,
     label,
+    algorithm,
 ):
 
     model_path = resolve_model_path(
         model_path
     )
 
+
     print()
+
+    print(
+        "=" * 65
+    )
+
+
     print(
         f"Loading {label}"
     )
+
+
+    print(
+        f"Algorithm : {algorithm}"
+    )
+
 
     print(
         model_path
     )
 
-    model = PPO.load(
-        str(model_path)
+
+    print(
+        "=" * 65
     )
 
+
     # --------------------------------------------------------
-    # Same environment for every model.
+    # Correct algorithm loader
+    # --------------------------------------------------------
+
+    model = load_model(
+        algorithm,
+        model_path,
+    )
+
+
+    # --------------------------------------------------------
+    # ORIGINAL EVALUATION PROTOCOL
     #
-    # Reward weight does not affect dynamics or observations,
-    # so comparison focuses on physical behaviour.
+    # Important:
+    # No w_yaw is passed here.
     # --------------------------------------------------------
 
     env = SesameRLEnv()
+
 
     obs, _ = env.reset(
         seed=SEED
     )
 
+
+    # --------------------------------------------------------
+    # Storage
+    # --------------------------------------------------------
+
     times = []
+
 
     x_values = []
     y_values = []
+
 
     forward_values = []
     lateral_values = []
     yaw_values = []
 
+
     upright_values = []
+
+
+    # --------------------------------------------------------
+    # ORIGINAL:
+    # Base-body world position.
+    # --------------------------------------------------------
 
     start_position = (
         env.data.xpos[
@@ -154,11 +299,14 @@ def rollout(
         ].copy()
     )
 
+
     previous_position = (
         start_position.copy()
     )
 
+
     path_length = 0.0
+
 
     terminated = False
     truncated = False
@@ -172,10 +320,15 @@ def rollout(
         EPISODE_STEPS
     ):
 
+        # ----------------------------------------------------
+        # Deterministic evaluation
+        # ----------------------------------------------------
+
         action, _ = model.predict(
             obs,
             deterministic=True,
         )
+
 
         (
             obs,
@@ -187,11 +340,18 @@ def rollout(
             action
         )
 
+
+        # ----------------------------------------------------
+        # ORIGINAL:
+        # Base-body world position using xpos.
+        # ----------------------------------------------------
+
         position = (
             env.data.xpos[
                 env.base_body_id
             ].copy()
         )
+
 
         # ----------------------------------------------------
         # Path length
@@ -204,12 +364,14 @@ def rollout(
             )
         )
 
+
         previous_position = (
             position.copy()
         )
 
+
         # ----------------------------------------------------
-        # Log
+        # Time
         # ----------------------------------------------------
 
         times.append(
@@ -217,15 +379,27 @@ def rollout(
             * CONTROL_DT
         )
 
+
+        # ----------------------------------------------------
+        # ORIGINAL:
+        # Relative displacement from reset position.
+        # ----------------------------------------------------
+
         x_values.append(
             position[0]
             - start_position[0]
         )
 
+
         y_values.append(
             position[1]
             - start_position[1]
         )
+
+
+        # ----------------------------------------------------
+        # Forward velocity
+        # ----------------------------------------------------
 
         forward_values.append(
             float(
@@ -235,6 +409,11 @@ def rollout(
             )
         )
 
+
+        # ----------------------------------------------------
+        # Lateral velocity
+        # ----------------------------------------------------
+
         lateral_values.append(
             float(
                 info[
@@ -242,6 +421,14 @@ def rollout(
                 ]
             )
         )
+
+
+        # ----------------------------------------------------
+        # Yaw rate
+        #
+        # ORIGINAL:
+        # Convert rad/s -> deg/s here.
+        # ----------------------------------------------------
 
         yaw_values.append(
             float(
@@ -253,6 +440,11 @@ def rollout(
             )
         )
 
+
+        # ----------------------------------------------------
+        # Upright
+        # ----------------------------------------------------
+
         upright_values.append(
             float(
                 info[
@@ -261,10 +453,16 @@ def rollout(
             )
         )
 
+
+        # ----------------------------------------------------
+        # End episode
+        # ----------------------------------------------------
+
         if (
             terminated
             or truncated
         ):
+
             break
 
 
@@ -278,6 +476,11 @@ def rollout(
         ].copy()
     )
 
+
+    # --------------------------------------------------------
+    # Net displacement
+    # --------------------------------------------------------
+
     displacement = float(
         np.linalg.norm(
             end_position[:2]
@@ -285,11 +488,17 @@ def rollout(
         )
     )
 
+
+    # --------------------------------------------------------
+    # Forward
+    # --------------------------------------------------------
+
     mean_forward = float(
         np.mean(
             forward_values
         )
     )
+
 
     mean_abs_forward = float(
         np.mean(
@@ -299,6 +508,11 @@ def rollout(
         )
     )
 
+
+    # --------------------------------------------------------
+    # Lateral
+    # --------------------------------------------------------
+
     mean_abs_lateral = float(
         np.mean(
             np.abs(
@@ -307,6 +521,11 @@ def rollout(
         )
     )
 
+
+    # --------------------------------------------------------
+    # Yaw
+    # --------------------------------------------------------
+
     mean_abs_yaw = float(
         np.mean(
             np.abs(
@@ -314,6 +533,11 @@ def rollout(
             )
         )
     )
+
+
+    # --------------------------------------------------------
+    # Directional ratio
+    # --------------------------------------------------------
 
     directional_ratio = (
         mean_abs_forward
@@ -324,6 +548,11 @@ def rollout(
             + 1e-9
         )
     )
+
+
+    # --------------------------------------------------------
+    # Path efficiency
+    # --------------------------------------------------------
 
     if path_length > 1e-9:
 
@@ -337,10 +566,17 @@ def rollout(
         path_efficiency = 0.0
 
 
+    # --------------------------------------------------------
+    # Result
+    # --------------------------------------------------------
+
     result = {
 
         "label":
             label,
+
+        "algorithm":
+            algorithm,
 
         "time":
             np.asarray(
@@ -407,108 +643,197 @@ def rollout(
             terminated,
     }
 
+
     env.close()
+
 
     return result
 
 
 # ============================================================
-# 5. RUN BOTH
+# 6. RUN ALL ENABLED MODELS
 # ============================================================
 
-A = rollout(
-    MODEL_A,
-    LABEL_A,
-)
+results = []
 
-B = rollout(
-    MODEL_B,
-    LABEL_B,
-)
+
+for config in MODELS:
+
+    result = rollout(
+        config[
+            "path"
+        ],
+
+        config[
+            "label"
+        ],
+
+        config[
+            "algorithm"
+        ],
+    )
+
+
+    results.append(
+        result
+    )
+
+
+if len(results) < 2:
+
+    raise RuntimeError(
+        "At least two models are required for comparison."
+    )
 
 
 # ============================================================
-# 6. TERMINAL SUMMARY
+# 7. TERMINAL SUMMARY
+#
+# Automatically supports 2, 3, or more models.
 # ============================================================
 
 print()
-print("=" * 72)
-print("MODEL COMPARISON")
-print("=" * 72)
 
 print(
+    "=" * 110
+)
+
+
+print(
+    "MODEL COMPARISON"
+)
+
+
+print(
+    "=" * 110
+)
+
+
+header = (
     f"{'Metric':<28}"
-    f"{LABEL_A:>18}"
-    f"{LABEL_B:>18}"
 )
 
-print("-" * 72)
+
+for result in results:
+
+    header += (
+        f"{result['label']:>20}"
+    )
+
 
 print(
-    f"{'Mean forward m/s':<28}"
-    f"{A['mean_forward']:>18.5f}"
-    f"{B['mean_forward']:>18.5f}"
+    header
 )
+
 
 print(
-    f"{'Mean |forward| m/s':<28}"
-    f"{A['mean_abs_forward']:>18.5f}"
-    f"{B['mean_abs_forward']:>18.5f}"
+    "-" * 110
 )
+
+
+SUMMARY_ROWS = [
+
+    (
+        "Mean forward m/s",
+        "mean_forward",
+        ".5f",
+    ),
+
+    (
+        "Mean |forward| m/s",
+        "mean_abs_forward",
+        ".5f",
+    ),
+
+    (
+        "Mean |lateral| m/s",
+        "mean_abs_lateral",
+        ".5f",
+    ),
+
+    (
+        "Mean |yaw| deg/s",
+        "mean_abs_yaw",
+        ".3f",
+    ),
+
+    (
+        "Directional ratio",
+        "directional_ratio",
+        ".4f",
+    ),
+
+    (
+        "Path efficiency",
+        "path_efficiency",
+        ".4f",
+    ),
+
+    (
+        "Displacement m",
+        "displacement",
+        ".4f",
+    ),
+
+    (
+        "Path length m",
+        "path_length",
+        ".4f",
+    ),
+
+    (
+        "Minimum upright",
+        "min_upright",
+        ".4f",
+    ),
+]
+
+
+for (
+    metric_name,
+    key,
+    number_format,
+) in SUMMARY_ROWS:
+
+    row = (
+        f"{metric_name:<28}"
+    )
+
+
+    for result in results:
+
+        value = format(
+            result[
+                key
+            ],
+            number_format,
+        )
+
+
+        row += (
+            f"{value:>20}"
+        )
+
+
+    print(
+        row
+    )
+
 
 print(
-    f"{'Mean |lateral| m/s':<28}"
-    f"{A['mean_abs_lateral']:>18.5f}"
-    f"{B['mean_abs_lateral']:>18.5f}"
+    "=" * 110
 )
-
-print(
-    f"{'Mean |yaw| deg/s':<28}"
-    f"{A['mean_abs_yaw']:>18.3f}"
-    f"{B['mean_abs_yaw']:>18.3f}"
-)
-
-print(
-    f"{'Directional ratio':<28}"
-    f"{A['directional_ratio']:>18.4f}"
-    f"{B['directional_ratio']:>18.4f}"
-)
-
-print(
-    f"{'Path efficiency':<28}"
-    f"{A['path_efficiency']:>18.4f}"
-    f"{B['path_efficiency']:>18.4f}"
-)
-
-print(
-    f"{'Displacement m':<28}"
-    f"{A['displacement']:>18.4f}"
-    f"{B['displacement']:>18.4f}"
-)
-
-print(
-    f"{'Path length m':<28}"
-    f"{A['path_length']:>18.4f}"
-    f"{B['path_length']:>18.4f}"
-)
-
-print(
-    f"{'Minimum upright':<28}"
-    f"{A['min_upright']:>18.4f}"
-    f"{B['min_upright']:>18.4f}"
-)
-
-print("=" * 72)
 
 
 # ============================================================
-# 7. SAVE SUMMARY CSV
+# 8. SAVE SUMMARY CSV
 # ============================================================
 
 summary_path = (
     OUTPUT_DIR
     / "04_summary.csv"
 )
+
 
 with summary_path.open(
     "w",
@@ -520,8 +845,10 @@ with summary_path.open(
         f
     )
 
+
     writer.writerow([
         "model",
+        "algorithm",
         "mean_forward",
         "mean_abs_forward",
         "mean_abs_lateral",
@@ -534,300 +861,493 @@ with summary_path.open(
         "terminated",
     ])
 
-    for result in [
-        A,
-        B,
-    ]:
+
+    for result in results:
 
         writer.writerow([
-            result["label"],
-            result["mean_forward"],
-            result["mean_abs_forward"],
-            result["mean_abs_lateral"],
-            result["mean_abs_yaw"],
-            result["directional_ratio"],
-            result["displacement"],
-            result["path_length"],
-            result["path_efficiency"],
-            result["min_upright"],
-            result["terminated"],
+            result[
+                "label"
+            ],
+
+            result[
+                "algorithm"
+            ],
+
+            result[
+                "mean_forward"
+            ],
+
+            result[
+                "mean_abs_forward"
+            ],
+
+            result[
+                "mean_abs_lateral"
+            ],
+
+            result[
+                "mean_abs_yaw"
+            ],
+
+            result[
+                "directional_ratio"
+            ],
+
+            result[
+                "displacement"
+            ],
+
+            result[
+                "path_length"
+            ],
+
+            result[
+                "path_efficiency"
+            ],
+
+            result[
+                "min_upright"
+            ],
+
+            result[
+                "terminated"
+            ],
         ])
 
 
 # ============================================================
-# 8. XY TRAJECTORY
+# 9. XY TRAJECTORY
+#
+# EXACT ORIGINAL:
+# - base_body xpos
+# - relative displacement
+# - Start at (0,0)
+# - same title
+# - same axis labels
+# - same figsize
+# - same dpi
 # ============================================================
 
 plt.figure(
     figsize=(7, 7)
 )
 
-plt.plot(
-    A["x"],
-    A["y"],
-    label=LABEL_A,
-)
 
-plt.plot(
-    B["x"],
-    B["y"],
-    label=LABEL_B,
-)
+for result in results:
+
+    plt.plot(
+        result[
+            "x"
+        ],
+
+        result[
+            "y"
+        ],
+
+        label=result[
+            "label"
+        ],
+    )
+
 
 plt.scatter(
     [0],
     [0],
+
     marker="o",
+
     label="Start",
 )
+
 
 plt.xlabel(
     "World X displacement (m)"
 )
 
+
 plt.ylabel(
     "World Y displacement (m)"
 )
+
 
 plt.title(
     "Policy trajectory comparison"
 )
 
+
 plt.axis(
     "equal"
 )
+
 
 plt.grid(
     True,
     alpha=0.3,
 )
 
+
 plt.legend()
 
+
 plt.tight_layout()
+
 
 plt.savefig(
     OUTPUT_DIR
     / "04_trajectory.png",
+
     dpi=200,
 )
+
 
 plt.close()
 
 
 # ============================================================
-# 9. FORWARD VELOCITY
+# 10. FORWARD VELOCITY
 # ============================================================
 
 plt.figure(
     figsize=(10, 4)
 )
 
-plt.plot(
-    A["time"],
-    A["forward"],
-    label=LABEL_A,
-)
 
-plt.plot(
-    B["time"],
-    B["forward"],
-    label=LABEL_B,
-)
+for result in results:
+
+    plt.plot(
+        result[
+            "time"
+        ],
+
+        result[
+            "forward"
+        ],
+
+        label=result[
+            "label"
+        ],
+    )
+
 
 plt.axhline(
     0,
     linewidth=1,
 )
 
+
 plt.xlabel(
     "Time (s)"
 )
+
 
 plt.ylabel(
     "Forward velocity (m/s)"
 )
 
+
 plt.title(
     "Forward velocity"
 )
+
 
 plt.grid(
     True,
     alpha=0.3,
 )
 
+
 plt.legend()
 
+
 plt.tight_layout()
+
 
 plt.savefig(
     OUTPUT_DIR
     / "04_forward_velocity.png",
+
     dpi=200,
 )
+
 
 plt.close()
 
 
 # ============================================================
-# 10. LATERAL VELOCITY
+# 11. LATERAL VELOCITY
 # ============================================================
 
 plt.figure(
     figsize=(10, 4)
 )
 
-plt.plot(
-    A["time"],
-    A["lateral"],
-    label=LABEL_A,
-)
 
-plt.plot(
-    B["time"],
-    B["lateral"],
-    label=LABEL_B,
-)
+for result in results:
+
+    plt.plot(
+        result[
+            "time"
+        ],
+
+        result[
+            "lateral"
+        ],
+
+        label=result[
+            "label"
+        ],
+    )
+
 
 plt.axhline(
     0,
     linewidth=1,
 )
 
+
 plt.xlabel(
     "Time (s)"
 )
+
 
 plt.ylabel(
     "Lateral velocity (m/s)"
 )
 
+
 plt.title(
     "Lateral velocity"
 )
+
 
 plt.grid(
     True,
     alpha=0.3,
 )
 
+
 plt.legend()
 
+
 plt.tight_layout()
+
 
 plt.savefig(
     OUTPUT_DIR
     / "04_lateral_velocity.png",
+
     dpi=200,
 )
+
 
 plt.close()
 
 
 # ============================================================
-# 11. YAW RATE
+# 12. YAW RATE
 # ============================================================
 
 plt.figure(
     figsize=(10, 4)
 )
 
-plt.plot(
-    A["time"],
-    A["yaw"],
-    label=LABEL_A,
-)
 
-plt.plot(
-    B["time"],
-    B["yaw"],
-    label=LABEL_B,
-)
+for result in results:
+
+    plt.plot(
+        result[
+            "time"
+        ],
+
+        result[
+            "yaw"
+        ],
+
+        label=result[
+            "label"
+        ],
+    )
+
 
 plt.axhline(
     0,
     linewidth=1,
 )
 
+
 plt.xlabel(
     "Time (s)"
 )
+
 
 plt.ylabel(
     "Yaw rate (deg/s)"
 )
 
+
 plt.title(
     "Yaw-rate comparison"
 )
+
 
 plt.grid(
     True,
     alpha=0.3,
 )
 
+
 plt.legend()
 
+
 plt.tight_layout()
+
 
 plt.savefig(
     OUTPUT_DIR
     / "04_yaw_rate.png",
+
     dpi=200,
 )
+
 
 plt.close()
 
 
 # ============================================================
-# 12. NORMALIZED METRIC COMPARISON
+# 13. NORMALIZED POLICY METRICS
 #
-# Each metric has different units.
-# Normalize B relative to A rather than putting raw
-# m/s, deg/s and ratios on one y-axis.
+# ORIGINAL LOGIC:
+# First model = baseline = 100 %
+#
+# V3/V4/etc. =
+# metric / abs(baseline metric) * 100
 # ============================================================
 
 metric_names = [
+
     "Forward",
+
     "Lateral",
+
     "Yaw",
+
     "Directional",
+
     "Path efficiency",
 ]
 
-a_metrics = np.array([
-    A["mean_forward"],
-    A["mean_abs_lateral"],
-    A["mean_abs_yaw"],
-    A["directional_ratio"],
-    A["path_efficiency"],
+
+baseline = results[0]
+
+
+baseline_metrics = np.array([
+
+    baseline[
+        "mean_forward"
+    ],
+
+    baseline[
+        "mean_abs_lateral"
+    ],
+
+    baseline[
+        "mean_abs_yaw"
+    ],
+
+    baseline[
+        "directional_ratio"
+    ],
+
+    baseline[
+        "path_efficiency"
+    ],
 ])
 
-b_metrics = np.array([
-    B["mean_forward"],
-    B["mean_abs_lateral"],
-    B["mean_abs_yaw"],
-    B["directional_ratio"],
-    B["path_efficiency"],
-])
+
+normalized_results = []
 
 
-# A = 100 %
-a_normalized = np.ones(
-    len(metric_names)
-) * 100.0
+for index, result in enumerate(
+    results
+):
 
-b_normalized = (
-    b_metrics
-    /
-    (
-        np.abs(a_metrics)
-        + 1e-9
+    # --------------------------------------------------------
+    # Baseline = 100 %
+    # --------------------------------------------------------
+
+    if index == 0:
+
+        normalized = (
+            np.ones(
+                len(
+                    metric_names
+                )
+            )
+            * 100.0
+        )
+
+
+    # --------------------------------------------------------
+    # Other models relative to baseline
+    # --------------------------------------------------------
+
+    else:
+
+        model_metrics = np.array([
+
+            result[
+                "mean_forward"
+            ],
+
+            result[
+                "mean_abs_lateral"
+            ],
+
+            result[
+                "mean_abs_yaw"
+            ],
+
+            result[
+                "directional_ratio"
+            ],
+
+            result[
+                "path_efficiency"
+            ],
+        ])
+
+
+        normalized = (
+
+            model_metrics
+
+            /
+
+            (
+                np.abs(
+                    baseline_metrics
+                )
+
+                + 1e-9
+            )
+
+            * 100.0
+        )
+
+
+    normalized_results.append(
+        normalized
     )
-    * 100.0
-)
 
+
+# ------------------------------------------------------------
+# Dynamic bar positions
+#
+# Works with:
+# 2 models
+# 3 models
+# 4 models...
+# ------------------------------------------------------------
 
 x = np.arange(
     len(
@@ -835,31 +1355,70 @@ x = np.arange(
     )
 )
 
-width = 0.35
+
+n_models = len(
+    results
+)
+
+
+width = (
+    0.8
+    / n_models
+)
+
+
+offsets = (
+
+    np.arange(
+        n_models
+    )
+
+    - (
+        n_models
+        - 1
+    ) / 2
+
+) * width
 
 
 plt.figure(
     figsize=(10, 5)
 )
 
-plt.bar(
-    x - width / 2,
-    a_normalized,
-    width,
-    label=LABEL_A,
-)
 
-plt.bar(
-    x + width / 2,
-    b_normalized,
-    width,
-    label=LABEL_B,
-)
+for (
+    result,
+    normalized,
+    offset,
+) in zip(
+
+    results,
+
+    normalized_results,
+
+    offsets,
+):
+
+    plt.bar(
+
+        x
+        + offset,
+
+        normalized,
+
+        width,
+
+        label=result[
+            "label"
+        ],
+    )
+
 
 plt.axhline(
     100,
     linewidth=1,
 )
+
 
 plt.xticks(
     x,
@@ -867,23 +1426,30 @@ plt.xticks(
     rotation=15,
 )
 
+
 plt.ylabel(
-    f"Relative to {LABEL_A} (%)"
+    f"Relative to {baseline['label']} (%)"
 )
+
 
 plt.title(
     "Normalized policy metrics"
 )
 
+
 plt.legend()
 
+
 plt.tight_layout()
+
 
 plt.savefig(
     OUTPUT_DIR
     / "04_metrics.png",
+
     dpi=200,
 )
+
 
 plt.close()
 
@@ -893,42 +1459,55 @@ plt.close()
 # ============================================================
 
 print()
+
+
 print(
     "Comparison complete."
 )
 
+
 print(
-    f"Output directory:"
+    "Output directory:"
 )
+
 
 print(
     OUTPUT_DIR
 )
 
+
 print()
+
+
 print(
     "Generated:"
 )
+
 
 print(
     "  04_summary.csv"
 )
 
+
 print(
     "  04_trajectory.png"
 )
+
 
 print(
     "  04_forward_velocity.png"
 )
 
+
 print(
     "  04_lateral_velocity.png"
 )
 
+
 print(
     "  04_yaw_rate.png"
 )
+
 
 print(
     "  04_metrics.png"
