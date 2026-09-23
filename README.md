@@ -23,6 +23,26 @@ actuator test
 verisoncheck
 view_sesame
 
+
+**Git Hub**
+*UPLOAD*
+[ 工作區 (Working Directory) ] 
+       │
+       │  1. git add .  (把修改或新檔案放到「暫存區」)
+       ▼
+[ 暫存區 (Staging Area) ] 
+       │
+       │  2. git commit -m "訊息"  (把暫存區的內容「打包成版本」)
+       ▼
+[ 本地儲存庫 (Local Repository) ]
+       │
+       │  3. git push  (上傳到 GitHub)
+       ▼
+[ GitHub (Remote) ]
+
+*DOWNLOAD*
+git pull
+
 ## Project Stages
 
 ### 001 — Actuator Mapping / Model Setup
