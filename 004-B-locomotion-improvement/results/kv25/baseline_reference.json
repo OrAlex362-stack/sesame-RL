@@ -1,0 +1,9 @@
+{
+  "K_V": 25,
+  "algorithm": "TD3",
+  "total_timesteps": 500000,
+  "seed": 42,
+  "model": "/home/kit/sesame-RL/004-command-conditioned-RL/results/td3/best_model/best_model.zip",
+  "forward_mae": 0.09209121487550231,
+  "forward_response_slope": 0.20239057338826943
+}
